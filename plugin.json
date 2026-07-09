@@ -1,0 +1,15 @@
+{
+  "id": "fancySwitcher",
+  "type": "widget",
+  "name": "Fancy Workspace Switcher",
+  "description": "Enhanced workspace switcher with hover-to-preview window popups. Hover over any workspace pip to see a list of open windows, then click to focus a specific window.",
+  "version": "0.1.0",
+  "author": "Mike Thomas",
+  "icon": "space_dashboard",
+  "component": "./FancySwitcherWidget.qml",
+  "settings": "./FancySwitcherSettings.qml",
+  "permissions": [
+    "settings_read",
+    "settings_write"
+  ]
+}
