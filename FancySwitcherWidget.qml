@@ -25,6 +25,43 @@ Item {
     property string variantId: ""
     property var variantData: null
 
+    function opt(key) {
+        // 1. Plugin service config (e.g. from plugin_settings.json via FancySwitcherSettings)
+        if (pluginService && pluginId) {
+            const val = pluginService.loadPluginData(pluginId, key, undefined);
+            if (val !== undefined && val !== null)
+                return val;
+        }
+
+        // 2. Bar widget config for fancySwitcher (variantData or barWidgetEntry)
+        const myEntry = variantData || SettingsData.barWidgetEntry(root.barConfig, "fancySwitcher");
+        if (myEntry && myEntry[key] !== undefined && myEntry[key] !== null)
+            return myEntry[key];
+
+        // 3. Built-in workspaceSwitcher widget entry on this bar (Settings -> DankBar -> Workspace)
+        const wsEntry = SettingsData.barWidgetEntry(root.barConfig, "workspaceSwitcher");
+        if (wsEntry && wsEntry[key] !== undefined && wsEntry[key] !== null)
+            return wsEntry[key];
+
+        // 4. Any workspaceSwitcher entry across all bars in SettingsData
+        if (SettingsData.barConfigs) {
+            for (let i = 0; i < SettingsData.barConfigs.length; i++) {
+                const otherWs = SettingsData.barWidgetEntry(SettingsData.barConfigs[i], "workspaceSwitcher");
+                if (otherWs && otherWs[key] !== undefined && otherWs[key] !== null)
+                    return otherWs[key];
+            }
+        }
+
+        // 5. Explicit defaults for fancySwitcher
+        if (key === "showWorkspaceIndex" || key === "showWorkspaceName")
+            return false;
+        if (key === "showOccupiedWorkspacesOnly")
+            return true;
+
+        // 6. Default from DMS BarWidgetDefaults
+        return SettingsData.widgetOption("workspaceSwitcher", null, key);
+    }
+
     // Derived from parentScreen — WidgetHost does not inject screenName
     // for plugin widgets, unlike the built-in WorkspaceSwitcher.
     readonly property string screenName: parentScreen ? parentScreen.name : ""
@@ -79,7 +116,7 @@ Item {
             default: return [1];
             }
         }
-        return SettingsData.showWorkspacePadding ? _padWorkspaces(baseList) : baseList;
+        return root.opt("showWorkspacePadding") ? _padWorkspaces(baseList) : baseList;
     }
 
     readonly property bool hasNativeWorkspaceSupport:
@@ -168,7 +205,7 @@ Item {
             if (scrollInProgress) return;
             const delta = wheel.angleDelta.y;
             const isTouchpad = wheel.pixelDelta && wheel.pixelDelta.y !== 0;
-            const reverse = SettingsData.reverseScrolling ? -1 : 1;
+            const reverse = root.opt("reverseScrolling") ? -1 : 1;
 
             if (isTouchpad) {
                 touchpadAccumulator += delta;
@@ -203,6 +240,7 @@ Item {
             delegate: FancySwitcherPip {
                 workspaceData: modelData
                 workspaceIndex: index
+                switcherRoot: root
                 isActive: _isWorkspaceActive(modelData)
                 isPlaceholder: _isPlaceholder(modelData)
                 isVerticalBar: root.isVertical
@@ -300,7 +338,7 @@ Item {
         if (useExtWorkspace)
             return (modelData?.id || modelData?.name) === currentWorkspace;
         if (CompositorService.isNiri)
-            return !!(modelData && modelData.idx === currentWorkspace);
+            return !!(modelData && modelData.id === currentWorkspace);
         if (CompositorService.isHyprland)
             return !!(modelData && modelData.id === currentWorkspace);
         if (CompositorService.isDwl)
@@ -312,7 +350,7 @@ Item {
 
     function _isPlaceholder(modelData) {
         if (useExtWorkspace) return !!(modelData && modelData.hidden);
-        if (CompositorService.isNiri) return !!(modelData && modelData.idx === -1);
+        if (CompositorService.isNiri) return !!(modelData && (modelData.id === -1 || modelData.idx === -1));
         if (CompositorService.isHyprland) return !!(modelData && modelData.id === -1);
         if (CompositorService.isDwl) return !!(modelData && modelData.tag === -1);
         if (CompositorService.isSway || CompositorService.isScroll || CompositorService.isMiracle)
@@ -328,7 +366,11 @@ Item {
         }
         switch (CompositorService.compositor) {
         case "niri":
-            if (data.idx !== undefined) NiriService.switchToWorkspace(data.idx); break;
+            if (data.id !== undefined && data.id !== -1)
+                NiriService.switchToWorkspace(data.id);
+            else if (data.idx !== undefined && data.idx !== -1)
+                NiriService.switchToWorkspace(data.idx);
+            break;
         case "hyprland":
             if (data.id) Hyprland.dispatch(`workspace ${data.id}`); break;
         case "dwl":
@@ -357,7 +399,7 @@ Item {
         if (useExtWorkspace) {
             currentIndex = realWorkspaces.findIndex(ws => (ws.id || ws.name) === currentWorkspace);
         } else if (CompositorService.isNiri) {
-            currentIndex = realWorkspaces.findIndex(ws => ws && ws.idx === currentWorkspace);
+            currentIndex = realWorkspaces.findIndex(ws => ws && ws.id === currentWorkspace);
         } else if (CompositorService.isHyprland) {
             currentIndex = realWorkspaces.findIndex(ws => ws.id === currentWorkspace);
         } else if (CompositorService.isDwl) {
@@ -409,7 +451,8 @@ Item {
         else if (CompositorService.isSway || CompositorService.isScroll || CompositorService.isMiracle)
             placeholder = {"num":-1};
         else placeholder = -1;
-        while (padded.length < 3) padded.push(placeholder);
+        const minCount = root.opt("workspacePaddingCount") || 3;
+        while (padded.length < minCount) padded.push(placeholder);
         return padded;
     }
 
@@ -447,7 +490,7 @@ Item {
             const monWs = filtered.filter(ws => ws.monitor?.name === root.screenName);
             filtered = monWs.length > 0 ? monWs.sort((a,b) => a.id - b.id) : [{"id":1,"name":"1"}];
         }
-        if (!SettingsData.showOccupiedWorkspacesOnly) return filtered;
+        if (!root.opt("showOccupiedWorkspacesOnly")) return filtered;
         const hyprTls = Array.from(Hyprland.toplevels?.values || []);
         const activeId = root.currentWorkspace;
         return filtered.filter(ws => ws.id === activeId || hyprTls.some(tl => tl.workspace?.id === ws.id));
@@ -473,7 +516,7 @@ Item {
             workspaces = disp.length > 0 ? disp : fallback;
         }
         workspaces = workspaces.slice().sort((a,b) => a.idx - b.idx);
-        if (!SettingsData.showOccupiedWorkspacesOnly) return workspaces;
+        if (!root.opt("showOccupiedWorkspacesOnly")) return workspaces;
         return workspaces.filter(ws => ws.is_active || (NiriService.windows?.some(win => win.workspace_id === ws.id) ?? false));
     }
 
@@ -482,14 +525,14 @@ Item {
         if (!root.screenName)
             return NiriService.getCurrentWorkspaceNumber();
         const ws = NiriService.allWorkspaces.find(ws => ws.output === root.screenName && ws.is_active);
-        return ws ? ws.idx : 1;
+        return ws ? ws.id : 1;
     }
 
     function _getDwlTags() {
         if (!DwlService.dwlAvailable) return [];
         const output = DwlService.getOutputState(root.effectiveScreenName);
         if (!output || !output.tags || output.tags.length === 0) return [];
-        if (SettingsData.dwlShowAllTags)
+        if (root.opt("dwlShowAllTags"))
             return output.tags.map(t => ({"tag":t.tag,"state":t.state,"clients":t.clients,"focused":t.focused}));
         return DwlService.getVisibleTags(root.effectiveScreenName).map(tagIndex => {
             const td = output.tags.find(t => t.tag === tagIndex);

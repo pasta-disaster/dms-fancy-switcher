@@ -20,6 +20,13 @@ Item {
     property var currentWorkspaceId: null
     property var dwlActiveTagsList: []
     property bool useExtWorkspace: false
+    property var switcherRoot: null
+
+    function opt(key) {
+        if (switcherRoot && typeof switcherRoot.opt === "function")
+            return switcherRoot.opt(key);
+        return SettingsData.widgetOption("workspaceSwitcher", null, key);
+    }
 
     signal pipClicked(var data)
     signal pipRightClicked()
@@ -36,13 +43,15 @@ Item {
     readonly property bool isOccupied: {
         if (CompositorService.isHyprland)
             return Array.from(Hyprland.toplevels?.values || []).some(tl => tl.workspace?.id === workspaceData?.id);
+        if (CompositorService.isNiri)
+            return NiriService.windows?.some(win => win.workspace_id === workspaceData?.id) ?? false;
         if (CompositorService.isDwl)
             return (workspaceData?.clients ?? 0) > 0;
         return false;
     }
 
     readonly property color unfocusedColor: {
-        switch (SettingsData.workspaceUnfocusedColorMode) {
+        switch (opt("workspaceUnfocusedColorMode")) {
         case "s":   return Theme.surface;
         case "sc":  return Theme.surfaceContainer;
         case "sch": return Theme.surfaceContainerHigh;
@@ -50,7 +59,7 @@ Item {
         }
     }
     readonly property color activeColor: {
-        switch (SettingsData.workspaceColorMode) {
+        switch (opt("workspaceColorMode")) {
         case "s":    return Theme.surface;
         case "sc":   return Theme.surfaceContainer;
         case "sch":  return Theme.surfaceContainerHigh;
@@ -59,7 +68,7 @@ Item {
         }
     }
     readonly property color urgentColor: {
-        switch (SettingsData.workspaceUrgentColorMode) {
+        switch (opt("workspaceUrgentColorMode")) {
         case "primary":   return Theme.primary;
         case "secondary": return Theme.secondary;
         case "s":         return Theme.surface;
@@ -68,7 +77,7 @@ Item {
         }
     }
     readonly property color occupiedColor: {
-        switch (SettingsData.workspaceOccupiedColorMode) {
+        switch (opt("workspaceOccupiedColorMode")) {
         case "sec":  return Theme.secondary;
         case "s":    return Theme.surface;
         case "sc":   return Theme.surfaceContainer;
@@ -82,8 +91,23 @@ Item {
         ? Math.max(pipWidgetHeight * 1.05, pipWidgetHeight * 0.8)
         : Math.max(pipWidgetHeight * 0.7, pipWidgetHeight * 0.6)
 
-    readonly property real visualWidth: isVerticalBar ? (pipWidgetHeight * 0.5) : baseSize
-    readonly property real visualHeight: isVerticalBar ? baseSize : (pipWidgetHeight * 0.5)
+    readonly property bool hasLabel: labelText.visible && labelText.text !== ""
+    readonly property real labelPadding: Theme.spacingM
+    readonly property real crossBase: hasLabel
+        ? Math.max(pipWidgetHeight * 0.75, labelText.implicitHeight + Theme.spacingXS * 2)
+        : (pipWidgetHeight * 0.5)
+
+    readonly property real visualWidth: {
+        if (isVerticalBar)
+            return hasLabel ? Math.max(crossBase, labelText.implicitWidth + Theme.spacingXS * 2) : crossBase;
+        if (hasLabel) {
+            return Math.max(baseSize, labelText.implicitWidth + labelPadding * 2);
+        }
+        return baseSize;
+    }
+    readonly property real visualHeight: isVerticalBar
+        ? (hasLabel ? Math.max(baseSize, labelText.implicitHeight + labelPadding * 2) : baseSize)
+        : crossBase
 
     width:  isVerticalBar ? pipBarThickness : visualWidth
     height: isVerticalBar ? visualHeight : pipBarThickness
@@ -124,6 +148,7 @@ Item {
 
         // Workspace label
         StyledText {
+            id: labelText
             anchors.centerIn: parent
             text: _getLabel()
             font.pixelSize: Theme.barTextSize(pipBarThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
@@ -132,7 +157,7 @@ Item {
                 ? Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.95)
                 : isPlaceholder ? Theme.surfaceTextAlpha
                 : Theme.surfaceTextMedium
-            visible: SettingsData.showWorkspaceIndex || SettingsData.showWorkspaceName
+            visible: !!(opt("showWorkspaceIndex") || opt("showWorkspaceName")) && text !== ""
         }
     }
 
@@ -159,16 +184,59 @@ Item {
         }
     }
 
-    function _getLabel() {
+    function _getIndexNumber() {
         if (useExtWorkspace) return workspaceIndex + 1;
         if (CompositorService.isNiri)
             return (workspaceData?.idx !== undefined && workspaceData?.idx !== -1)
-                ? workspaceData.idx : "";
-        if (CompositorService.isHyprland) return workspaceData?.id || "";
+                ? workspaceData.idx : (workspaceIndex + 1);
+        if (CompositorService.isHyprland)
+            return (workspaceData?.id !== undefined && workspaceData?.id !== -1)
+                ? workspaceData.id : (workspaceIndex + 1);
         if (CompositorService.isDwl)
-            return (workspaceData?.tag !== undefined) ? (workspaceData.tag + 1) : "";
+            return (workspaceData?.tag !== undefined && workspaceData?.tag !== -1)
+                ? (workspaceData.tag + 1) : (workspaceIndex + 1);
         if (CompositorService.isSway || CompositorService.isScroll || CompositorService.isMiracle)
-            return workspaceData?.num || "";
+            return (workspaceData?.num !== undefined && workspaceData?.num !== -1)
+                ? workspaceData.num : (workspaceIndex + 1);
         return workspaceIndex + 1;
+    }
+
+    function _getWorkspaceName() {
+        if (!workspaceData) return "";
+        let rawName = workspaceData.name;
+        if (!rawName || typeof rawName !== "string") return "";
+        rawName = rawName.trim();
+        return rawName;
+    }
+
+    function _getLabel() {
+        if (isPlaceholder) return "";
+
+        const showName = !!opt("showWorkspaceName");
+        const showIndex = !!opt("showWorkspaceIndex");
+
+        let wsName = showName ? _getWorkspaceName() : "";
+        if (wsName && isVerticalBar) {
+            wsName = wsName.charAt(0).toUpperCase();
+        }
+
+        const idxNum = _getIndexNumber();
+
+        if (wsName && wsName !== "") {
+            if (showIndex) {
+                return `${idxNum}: ${wsName}`;
+            }
+            return wsName;
+        }
+
+        if (showIndex) {
+            return String(idxNum);
+        }
+
+        if (showName) {
+            return String(idxNum);
+        }
+
+        return "";
     }
 }

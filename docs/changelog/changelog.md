@@ -17,3 +17,8 @@
 - [Fixed]: Popup still not switching between pips — the overlay surface spanned the bounding box of pip+gap+popup, covering adjacent pips on the Overlay Wayland layer and blocking their hover events; simplified surface to cover only the popup content rectangle, relying on the 400ms hide timer for gap crossing instead (Mike Thomas, 2026-07-02)
 - [Fixed]: Pips vertically anchored to bottom of pill instead of centred — Flow y-position used `visualBackground.y` (top of background) instead of centering within parent; changed to `(parent.height - implicitHeight) / 2` (Mike Thomas, 2026-07-02)
 - [Fixed]: Pips not scaling with bar size — widget used hardcoded `widgetHeight: 30` instead of accepting `widgetThickness` from WidgetHost; renamed property to `widgetThickness` which WidgetHost binds automatically, so pips now scale proportionally with bar thickness (Mike Thomas, 2026-07-02)
+- [Fixed]: Resolved workspace index rendering and unoccupied workspace filtering by adding opt() fallback resolution and PluginSettings toggles for DMS config migration (Mike, 2026-10-07)
+- [Fixed]: Fixed Niri workspace switching by passing workspace ID instead of display index to NiriService.switchToWorkspace (Mike, 2026-10-07)
+- [Fixed]: Fixed window popup click flick by focusing window directly and synchronously without 80ms delay or redundant workspace switch (Mike, 2026-10-07)
+- [Fixed]: Workspace name rendering on pips — _getLabel() now returns workspace name when showWorkspaceName is enabled, and pip width dynamically expands to fit text (Mike, 2026-10-08)
+- [Added]: Animated pip height expansion when workspace names or numbers are displayed, matching the default DMS workspace switcher animation (Mike, 2026-10-08)

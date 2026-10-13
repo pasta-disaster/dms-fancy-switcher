@@ -74,19 +74,6 @@ PanelWindow {
         }
     }
 
-    // Pending focus — stored at popup level so it survives delegate teardown
-    property var _pendingFocusWindowId: null
-
-    Timer {
-        id: focusTimer
-        interval: 80
-        onTriggered: {
-            if (popup._pendingFocusWindowId !== null) {
-                popup.windowActivated(popup._pendingFocusWindowId);
-                popup._pendingFocusWindowId = null;
-            }
-        }
-    }
 
     onWorkspaceDataChanged: {
         if (visible)
@@ -272,12 +259,11 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                popup._pendingFocusWindowId = modelData.windowId;
-                                if (switcherRoot)
-                                    switcherRoot._switchToWorkspaceByModelData(
-                                        popup.workspaceData);
+                                const winId = modelData.windowId;
                                 popup.hide();
-                                focusTimer.restart();
+                                popup.windowActivated(winId);
+                                if (switcherRoot)
+                                    switcherRoot._focusWindowById(winId);
                             }
                         }
                     }
